@@ -26,7 +26,6 @@ def obtener_puntos(respuestas, preguntas):
             opcion = next((opcion for opcion in pregunta['respuestas'] if opcion['opcion'] == respuesta_texto), None)
             if opcion:
                 total_puntos += opcion.get('puntos', 0)
-        # Puedes agregar más lógica para manejar otros tipos de preguntas aquí
 
     return total_puntos
 
@@ -59,7 +58,7 @@ def login():
 
     usuario = mongo.db.usuarios.find_one({'username': datos_login['username']})
     if usuario and check_password_hash(usuario['password'], datos_login['password']):
-        # Generar token de sesión (puedes utilizar JWT u otro método)
+        # Generar token de sesión (JWT)
         token_sesion = create_access_token(identity=str(usuario['_id']))
 
         respuesta = make_response(jsonify({'mensaje': 'Inicio de sesión exitoso'}), 200)
@@ -91,7 +90,6 @@ def obtener_encuestas():
 def obtener_encuesta(encuesta_id):
     encuesta = mongo.db.encuestas.find_one({'_id': ObjectId(encuesta_id)})
     if encuesta:
-        # Convertir ObjectId a str antes de devolver la respuesta JSON
         encuesta['_id'] = str(encuesta['_id'])
         return jsonify({'encuesta': encuesta})
     else:
@@ -114,7 +112,7 @@ def responder_encuesta(encuesta_id):
 
     if 'respuestas' in data:
         preguntas = obtener_preguntas_de_la_encuesta(
-            encuesta_id)  # Implementa la lógica para obtener las preguntas de la base de datos
+            encuesta_id)
         preguntas_respuestas = data['respuestas']
 
         for respuesta in preguntas_respuestas:
