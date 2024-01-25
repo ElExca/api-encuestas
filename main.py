@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from bson import ObjectId
 
+
 app = Flask(__name__)
 app.config['MONGO_URI'] = 'mongodb://localhost:27017/mantenimiento'
 app.config['JWT_SECRET_KEY'] = '0cc175b9c0f1b6a831c399e269772661'
@@ -38,16 +39,22 @@ def verificar_premio(respuestas, preguntas):
 @app.route('/api/registro', methods=['POST'])
 def registro():
     datos_usuario = request.get_json()
-    if 'username' not in datos_usuario or 'password' not in datos_usuario:
-        return jsonify({'mensaje': 'Se requiere nombre de usuario y contraseña'}), 400
+    if 'username' not in datos_usuario or 'password' not in datos_usuario or 'tipo' not in datos_usuario:
+        return jsonify({'mensaje': 'Se requiere nombre de usuario, contraseña y tipo'}), 400
 
     usuario_existente = mongo.db.usuarios.find_one({'username': datos_usuario['username']})
     if usuario_existente:
         return jsonify({'mensaje': 'El nombre de usuario ya está en uso'}), 409
 
+    # Agregar el campo "puntos" al documento del usuario
+    datos_usuario['puntos'] = datos_usuario.get('puntos', 0)
+
+    # Hash de la contraseña
     datos_usuario['password'] = generate_password_hash(datos_usuario['password'])
+
     mongo.db.usuarios.insert_one(datos_usuario)
     return jsonify({'mensaje': 'Registro exitoso'})
+
 
 # Inicio de sesión
 @app.route('/api/login', methods=['POST'])
@@ -78,8 +85,14 @@ def ruta_protegida():
 def crear_encuesta():
     nueva_encuesta = request.get_json()
     encuestas = mongo.db.encuestas
+
+    # Agregar el campo "status" al documento de la encuesta
+    nueva_encuesta['status'] = nueva_encuesta.get('status', 'activo')
+
     encuesta_id = encuestas.insert_one(nueva_encuesta).inserted_id
     return jsonify({'mensaje': 'Encuesta creada exitosamente', 'id_encuesta': str(encuesta_id)})
+
+
 
 @app.route('/api/encuestas', methods=['GET'])
 def obtener_encuestas():
@@ -110,20 +123,34 @@ def obtener_preguntas_de_la_encuesta(encuesta_id):
 def responder_encuesta(encuesta_id):
     data = request.get_json()
 
-    if 'respuestas' in data:
-        preguntas = obtener_preguntas_de_la_encuesta(
-            encuesta_id)
+    if 'respuestas' in data and 'username' in data:
+        preguntas = obtener_preguntas_de_la_encuesta(encuesta_id)
         preguntas_respuestas = data['respuestas']
+
+        puntos_totales = 0
 
         for respuesta in preguntas_respuestas:
             respuesta['puntos'] = obtener_puntos([respuesta], preguntas)
+            puntos_totales += respuesta['puntos']
+
+        # Buscar al usuario por su nombre de usuario
+        usuario = mongo.db.usuarios.find_one({'username': data['username']})
+
+        if usuario:
+            # Actualizar los puntos del usuario
+            usuario['puntos'] = usuario.get('puntos', 0) + puntos_totales
+            mongo.db.usuarios.update_one({'_id': usuario['_id']}, {'$set': {'puntos': usuario['puntos']}})
+
+        # Cambiar el estado de la encuesta a "inactiva"
+        mongo.db.encuestas.update_one({'_id': ObjectId(encuesta_id)}, {'$set': {'status': 'inactiva'}})
 
         if verificar_premio(preguntas_respuestas, preguntas):
-            return jsonify({'mensaje': 'Respuesta registrada exitosamente. ¡Felicidades! Has ganado un premio'})
+            return jsonify({'mensaje': 'Respuesta registrada exitosamente. ¡Felicidades! Has ganado un premio', 'puntos_obtenidos': puntos_totales})
         else:
-            return jsonify({'mensaje': 'Respuesta registrada exitosamente'})
+            return jsonify({'mensaje': 'Respuesta registrada exitosamente', 'puntos_obtenidos': puntos_totales})
     else:
         return jsonify({'mensaje': 'Formato de respuesta no válido'}), 400
+
 
 
 if __name__ == '__main__':
